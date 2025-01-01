@@ -4,7 +4,7 @@ NREL's PVWatts® (https://pvwatts.nrel.gov/) estimates the energy production of 
 
 An alternative to PVWatts is Photovoltaic Geographical Information System (PVGIS) (https://joint-research-centre.ec.europa.eu/photovoltaic-geographical-information-system-pvgis_en). PVGIS provides information on solar radiation and photovoltaic system performance for any location in the world, except the North and South Poles. PVGIS is also accessible via API. 
 
-Herein are two R flexdashboards that access each API.  PVWats has two files, both starting with PVWatts. PVGIS consists of the remaining files.
+Herein are two R flexdashboards that access each API.  PVWatts has two files, both starting with PVWatts. PVGIS consists of the remaining files.
 
 
 https://ylacerte.wixsite.com/ylacerte/
