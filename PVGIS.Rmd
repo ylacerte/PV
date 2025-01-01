@@ -1,0 +1,621 @@
+---
+title: "PV"
+author: "Yves"
+date: "26 December 2024"
+output:   
+  flexdashboard::flex_dashboard:
+    orientation: columns
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+  library(shinyWidgets)
+
+  RV <- reactiveValues()
+
+  source("C:\\Users\\ylace\\OneDrive\\Desktop\\STUFF\\PVGIS\\Model.R")
+  defaults <- defaults()
+  RV$input <- defaults
+```
+
+<b></b> {data-icon="ion-stats-bars"}
+=====================================  
+
+Column {data-width=100}
+-------------------------------------
+### <b></b>
+
+```{r, echo=FALSE}
+  actionButton("reset1", "Map")
+  HTML("<br><br>")
+  actionButton("reset2", "Home")
+```
+
+```{r, echo=FALSE}
+observeEvent(input$reset1,{
+    lat <- RV$input$location['lat',1]
+    lon <- RV$input$location['lon',1]
+    print(paste("reset the map", lat, lon))
+    
+    proxy <- leafletProxy("EC")
+    proxy %>% clearShapes() %>% 
+     addProviderTiles("CartoDB.Positron") %>% 
+     setView(lng=lon, lat=lat, zoom = 12) %>% 
+     addCircles(lng=lon, lat=lat, radius=500, color='red')
+})
+```
+
+```{r, echo=FALSE}
+observeEvent(input$reset2,{
+    lat <- defaults$location['lat', 1]
+    lon <- defaults$location['lon', 1]
+    print(paste("relocate the map to its original location", lat, lon))
+    proxy <- leafletProxy("EC")
+    proxy %>% clearShapes() %>% 
+     addProviderTiles("CartoDB.Positron") %>% 
+     setView(lng=lon, lat=lat, zoom = 12) %>% 
+     addCircles(lng=lon, lat=lat, radius=500, color='red')
+})
+```
+
+```{r, echo=FALSE}
+  observeEvent(input$EC_click, {
+    lat <- input$EC_click$lat
+    lon <- input$EC_click$lng
+    RV$input$location['lat',1] <- lat
+    RV$input$location['lon',1] <- lon
+    print(paste("update location after clicking on the map",
+                RV$input$location['lat',1], RV$input$location['lon',1]))
+
+    proxy <- leafletProxy("EC")
+    proxy %>% clearShapes() %>% 
+      addProviderTiles("CartoDB.Positron") %>% 
+      setView(lng=lon, lat=lat, zoom = 12) %>% 
+      addCircles(lng=lon, lat=lat, color='red',radius = 500) 
+})
+```
+
+Column {}
+-------------------------------------
+
+### <b>Solar radiation and photovoltaic system performance for any location in the world, except the North and South Poles.</b>
+```{r, echo=FALSE}
+output$EC <- renderLeaflet({
+    lat <- RV$input$location['lat',1]
+    lon <- RV$input$location['lon',1]
+    print(paste("set up the map", lon, lat))
+   
+    leaflet() %>% 
+      addProviderTiles("CartoDB.Positron") %>% 
+      setView(lng=lon, lat=lat, zoom = 12) %>% 
+      addCircles(lng=lon, lat=lat, radius=500, color='red')
+})
+leafletOutput('EC')
+```
+
+Column {}
+-------------------------------------
+### <b>Location</b>
+<b>Click on the map to change location</b>
+
+```{r, echo=FALSE}
+  renderUI({
+  HTML(RV$input$location %>% kbl() %>% kable_styling())
+})
+```
+
+###
+
+Adjust input parameters on the next page. 
+
+Once you are done, click this button to update the parameters.
+
+```{r, echo=FALSE}
+  actionButton("launch", "Update")
+```
+
+```{r, echo=FALSE}
+observeEvent(input$launch,{
+
+  RV$input$system["angle", 1] <- input$s1
+  RV$input$system["aspect", 1] <- input$s2
+  RV$input$system["pvtechchoice", 1] <- input$s3
+  RV$input$system["mountingplace", 1] <- input$s4
+  RV$input$system["loss", 1] <- input$s5
+  RV$input$system["peakpower", 1] <- input$s6
+  RV$input$system["trackingtype", 1] <- input$s7
+  
+  RV$input$off_grid["batterysize",1] <- input$o1
+  RV$input$off_grid["cutoff",1] <- input$o2
+  RV$input$off_grid["consumptionday",1] <- input$o3
+  
+  RV$input$calculations["optimalangles",1] <- as.numeric(input$c1)
+  RV$input$calculations["pvcalculation",1] <- as.numeric(input$c2)
+  RV$input$calculations["components",1] <- as.numeric(input$c3)
+  
+})
+```
+
+###
+
+Photovoltaic Geographical Information System (PVGIS) 
+
+  - online tool ... https://joint-research-centre.ec.europa.eu/photovoltaic-geographical-information-system-pvgis_en
+  - API ... https://joint-research-centre.ec.europa.eu/photovoltaic-geographical-information-system-pvgis/getting-started-pvgis/api-non-interactive-service_en
+  - entry point ... https://re.jrc.ec.europa.eu/api/v5_1/tool_name?param1=value1&param2=value2&...
+
+<b></b> {data-icon="ion-stats-bars"}
+=====================================  
+
+Column {data-width=300}
+-------------------------------------
+### <b>System</b>
+```{r, echo=FALSE}
+  renderUI({
+    df <- data.frame(cbind(name=rownames(defaults$system), desc=defaults$system$desc))
+    HTML(df %>% kbl() %>% kable_styling())
+  })
+```
+
+
+Column {data-width=150}
+-------------------------------------
+### <b>System</b>
+```{r, echo=FALSE}
+  textInput("s1",rownames(defaults$system)[1], value=defaults$system[1,1])  
+  textInput("s2",rownames(defaults$system)[2], value=defaults$system[2,1])  
+  textInput("s3",rownames(defaults$system)[3], value=defaults$system[3,1])  
+  textInput("s4",rownames(defaults$system)[4], value=defaults$system[4,1])  
+  textInput("s5",rownames(defaults$system)[5], value=defaults$system[5,1])  
+  textInput("s6",rownames(defaults$system)[6], value=defaults$system[6,1])  
+  textInput("s7",rownames(defaults$system)[7], value=defaults$system[7,1])  
+
+```
+
+Column {data-width=300}
+-------------------------------------
+### <b>Off grid</b>
+```{r, echo=FALSE}
+  renderUI({
+    df <- data.frame(cbind(name=rownames(defaults$off_grid), desc=defaults$off_grid$desc))
+    HTML(df %>% kbl() %>% kable_styling())
+  })
+```
+
+### <b>Calculations</b>
+```{r, echo=FALSE}
+  renderUI({
+    df <- data.frame(cbind(name=rownames(defaults$calculations), desc=defaults$calculations$desc))
+    HTML(df %>% kbl() %>% kable_styling())
+  })
+```
+
+Column {data-width=150}
+-------------------------------------
+### <b>Off grid</b>
+```{r, echo=FALSE}
+  textInput("o1",rownames(defaults$off_grid)[1], value=defaults$off_grid[1,1])  
+  textInput("o2",rownames(defaults$off_grid)[2], value=defaults$off_grid[2,1])  
+  textInput("o3",rownames(defaults$off_grid)[3], value=defaults$off_grid[3,1])  
+```
+
+### <b>Calculations</b>
+```{r, echo=FALSE}
+  switchInput(inputId = "c1", value = TRUE,label=rownames(defaults$calculations)[1])  
+  switchInput(inputId = "c2", value = TRUE,label=rownames(defaults$calculations)[2])  
+  switchInput(inputId = "c3", value = TRUE,label=rownames(defaults$calculations)[3])  
+```
+
+
+Column {data-width=200}
+-------------------------------------
+### <b>Inputs</b>
+```{r, echo=FALSE}
+  renderUI({
+    df <- data.frame(rbind(
+      c(value=input$s1, label=rownames(defaults$system)[1]),  
+      c(value=input$s2, label=rownames(defaults$system)[2]),  
+      c(value=input$s3, label=rownames(defaults$system)[3]),  
+      c(value=input$s4, label=rownames(defaults$system)[4]),  
+      c(value=input$s5, label=rownames(defaults$system)[5]),  
+      c(value=input$s6, label=rownames(defaults$system)[6]),  
+      c(value=input$s7, label=rownames(defaults$system)[7]),  
+  
+      c(value=input$o1, label=rownames(defaults$off_grid)[1]),  
+      c(value=input$o2, label=rownames(defaults$off_grid)[2]), 
+      c(value=input$o3, label=rownames(defaults$off_grid)[3]),
+    
+      c(value=as.numeric(input$c1), label=rownames(defaults$calculations)[1]),  
+      c(value=as.numeric(input$c2), label=rownames(defaults$calculations)[2]), 
+      c(value=as.numeric(input$c3), label=rownames(defaults$calculations)[3])
+    ))
+    HTML(df %>% kbl() %>% kable_styling())
+  })
+```
+
+
+<b></b> {data-icon="ion-stats-bars"}
+=====================================  
+
+Column {data-width=200}
+-------------------------------------
+### <b>TMY</b>
+
+Typical meteorological year (TMY) is a set of meteorological data 
+for every hour in a year for a given geographical location.
+
+```{r, echo=FALSE}
+actionButton("TMY", "")
+```
+
+Column {}
+-------------------------------------
+### 
+
+```{r, echo=FALSE}
+observeEvent(input$TMY, {
+  print("processing TMY")
+  source("C://Users//ylace//OneDrive//Desktop//STUFF//PVGIS//tmy.R")
+  q <- paste0(
+    url=url,
+    "tmy?",
+    "lat=", RV$input$location['lat',1], 
+    "&lon=", RV$input$location['lon',1],
+    "&outputformat=", outputformat
+  )
+  RV$TMY <- TMY(q)
+})
+```
+
+```{r, echo=FALSE}
+renderUI({
+  HTML(RV$TMY$meta %>% kbl() %>% kable_styling())
+})
+```
+
+###
+```{r, echo=FALSE}
+renderPlotly({
+
+  if ( ! is.null(RV$TMY) ) {
+    plot_ly(type='scatter', mode='markers', showlegend=TRUE) %>%
+      add_trace(data=RV$TMY$tmy, x=~time.UTC., y=~T2m, name="T2m") %>%
+      add_trace(data=RV$TMY$tmy, x=~time.UTC., y=~RH, name="RH") %>%
+      add_trace(data=RV$TMY$tmy, x=~time.UTC., y=~G.h., name="G.h.") %>%
+      add_trace(data=RV$TMY$tmy, x=~time.UTC., y=~G.h., name="Gb.n.") %>%
+      add_trace(data=RV$TMY$tmy, x=~time.UTC., y=~G.h., name="Gd.h.") %>%
+      add_trace(data=RV$TMY$tmy, x=~time.UTC., y=~G.h., name="IR.h.") %>%
+      add_trace(data=RV$TMY$tmy, x=~time.UTC., y=~G.h., name="WS10m") %>%
+      add_trace(data=RV$TMY$tmy, x=~time.UTC., y=~G.h., name="WD10m") %>%
+      add_trace(data=RV$TMY$tmy, x=~time.UTC., y=~G.h., name="SP") %>%
+      layout(yaxis=list(title="Value"))
+  }
+})
+```
+
+<b></b> {data-icon="ion-stats-bars"}
+=====================================  
+
+Column {data-width=300}
+-------------------------------------
+### <b>Hourly Radiation</b>
+
+Solar irradiance and PV output data for every hour in a multi-year period.
+
+```{r, echo=FALSE}
+actionButton("HR", "")
+```
+
+### <b>Optimal panel geometry</b>
+```{r, echo=FALSE}
+renderUI({
+  if ( ! is.null(RV$Hourly_radiation) ) {
+    if ( RV$Hourly_radiation$input$value[12] == "TRUE" | 
+       RV$Hourly_radiation$input$value[14] == "TRUE") {
+        HTML(RV$Hourly_radiation$input[c(11,13),] %>% kbl() %>% kable_styling()) 
+    }
+  } 
+})
+```
+
+Column {}
+-------------------------------------
+### 
+
+```{r, echo=FALSE}
+observeEvent(input$HR, {
+  print("processing Hourly Radiation")
+  source("C://Users//ylace//OneDrive//Desktop//STUFF//PVGIS//hourly_radiation.R")
+  q <- paste0(
+    url=url,
+    "seriescalc?",
+    "lat=", RV$input$location['lat',1], 
+    "&lon=", RV$input$location['lon',1],
+    "&angle=", RV$input$system['angle',1],
+    "&aspect=", RV$input$system['aspect',1],
+    "&loss=", RV$input$system['loss', 1],
+    "&peakpower=", RV$input$system['peakpower', 1],
+    "&optimalangles=", RV$input$calculations['optimalangles',1],
+    "&pvcalculation=", RV$input$calculations['pvcalculation',1],
+    "&components=", RV$input$calculations['components',1],
+    "&startyear=", 2023,
+    "&outputformat=", outputformat
+  )
+  RV$Hourly_radiation <- Hourly_radiation(q)
+})
+```
+
+```{r, echo=FALSE}
+renderUI({
+  HTML(RV$Hourly_radiation$meta %>% kbl() %>% kable_styling())
+})
+```
+
+###
+```{r, echo=FALSE}
+renderPlotly({
+
+  if ( ! is.null(RV$Hourly_radiation) ) {
+plot_ly(type='scatter', mode='lines', showlegend=TRUE) %>%
+  add_trace(data=RV$Hourly_radiation$hourly, x=~time, y=~Gb.i., name="Gb.i.") %>%
+  add_trace(data=RV$Hourly_radiation$hourly, x=~time, y=~Gd.i., name="Gd.i.") %>%
+  add_trace(data=RV$Hourly_radiation$hourly, x=~time, y=~Gr.i., name="Gr.i.") %>%
+  add_trace(data=RV$Hourly_radiation$hourly, x=~time, y=~H_sun, name="H_sun") %>%
+  add_trace(data=RV$Hourly_radiation$hourly, x=~time, y=~T2m, name="T2m") %>%
+  add_trace(data=RV$Hourly_radiation$hourly, x=~time, y=~WS10m, name="WS10m") %>%
+  add_trace(data=RV$Hourly_radiation$hourly, x=~time, y=~P, name="P")
+  }
+})
+```
+
+<b></b> {data-icon="ion-stats-bars"}
+=====================================  
+
+Column {data-width=300}
+-------------------------------------
+### <b>Grid Connected</b>
+
+Monthly average values of PV system energy output.
+
+In-plane irradiation per month and for the full year.
+
+```{r, echo=FALSE}
+actionButton("GC", "")
+```
+
+### <b>Optimal panel geometry</b>
+```{r, echo=FALSE}
+renderUI({
+  if ( ! is.null(RV$Grid_connected) ) {
+    if ( RV$Grid_connected$input$value[11] == "TRUE" | 
+       RV$Grid_connected$input$value[13] == "TRUE") {
+        HTML(RV$Grid_connected$input[c(10,12),] %>% kbl() %>% kable_styling()) 
+    }
+  } 
+})
+```
+
+Column {}
+-------------------------------------
+### 
+
+```{r, echo=FALSE}
+observeEvent(input$GC, {
+  print("processing Grid Connected")
+  source("C://Users//ylace//OneDrive//Desktop//STUFF//PVGIS//grid_connected.R")
+  q <- paste0(
+    url=url,
+    "PVcalc?",
+    "lat=", RV$input$location['lat',1], 
+    "&lon=", RV$input$location['lon',1],
+    "&pvtechchoice=", RV$input$system['pvtechchoice',1],
+    "&mountingplace=", RV$input$system['mountingplace',1],
+    "&angle=", RV$input$system['angle',1],
+    "&aspect=", RV$input$system['aspect',1],
+    "&peakpower=", RV$input$system['peakpower',1],
+    "&loss=", RV$input$system['loss',1],
+    "&optimalangles=", RV$input$calculations['optimalangles',1],
+    "&outputformat=", outputformat
+  )
+  RV$Grid_connected <- Grid_connected(q)
+})
+```
+
+```{r, echo=FALSE}
+renderUI({
+  HTML(RV$Grid_connected$meta %>% kbl() %>% kable_styling())
+})
+```
+
+###
+```{r, echo=FALSE}
+renderPlotly({
+  if ( ! is.null(RV$Grid_connected) ) {
+    plot_ly(type='scatter', mode='lines', showlegend=TRUE) %>%
+      add_trace(data=RV$Grid_connected$out, x=~month, y=~E_d, name="E_d") %>%
+      add_trace(data=RV$Grid_connected$out, x=~month, y=~E_m, name="E_m") %>%
+      add_trace(data=RV$Grid_connected$out, x=~month, y=~H.i._d, name="H.i._d") %>%
+      add_trace(data=RV$Grid_connected$out, x=~month, y=~H.i._m, name="H.i._m") %>%
+      add_trace(data=RV$Grid_connected$out, x=~month, y=~SD_m, name="SD_m")
+  }
+})
+```
+
+###
+```{r, echo=FALSE}
+renderUI({
+  HTML(RV$Grid_connected$totals %>% kbl() %>% kable_styling())
+})
+```
+
+<b></b> {data-icon="ion-stats-bars"}
+=====================================  
+
+Column {data-width=200}
+-------------------------------------
+### <b>Horizon Profile</b>
+
+List of horizon height values for the given location. 
+
+List of sun elevation angles at the June and December solstice. 
+
+The horizon height is given at 48 equidistant directions starting 
+from north and moving clockwise towards east, south and then west. 
+
+The sun elevation angles are given at half-hour intervals starting at 00:00UTC.
+
+
+```{r, echo=FALSE}
+actionButton("HP", "")
+```
+
+Column {data-width=300}
+-------------------------------------
+### 
+
+```{r, echo=FALSE}
+observeEvent(input$HP, {
+  print("processing Horizon_Profile")
+  source("C://Users//ylace//OneDrive//Desktop//STUFF//PVGIS//horizon_profile.R")
+  q <- paste0(
+    url=url,
+    "printhorizon?",
+    "lat=", RV$input$location['lat',1], 
+    "&lon=", RV$input$location['lon',1],
+    "&outputformat=", outputformat
+  )
+  RV$Horizon_profile <- Horizon_Profile(q)
+})
+```
+
+```{r, echo=FALSE}
+renderUI({
+  HTML(RV$Horizon_profile$meta %>% kbl() %>% kable_styling())
+})
+```
+
+Column {}
+-------------------------------------
+### 
+```{r, echo=FALSE}
+renderPlotly({
+  if ( ! is.null(RV$Horizon_profile) ) {
+    plot_ly(type='scatter', mode='lines', showlegend=TRUE) %>%
+      add_trace(data=RV$Horizon_profile$horizon_profile, x=~A, y=~H_hor, name="horizon_profile") %>%
+      add_trace(data=RV$Horizon_profile$winter_solstice, x=~A_sun, y=~H_sun, name="winter_solstice") %>%
+      add_trace(data=RV$Horizon_profile$summer_solstice, x=~A_sun, y=~H_sun, name="summer_solstice")
+  }
+})
+```
+
+### <b>Horizon profile</b>
+```{r, echo=FALSE}
+renderLeaflet({
+  if ( ! is.null(RV$Horizon_profile) ) {
+    
+    point <- as.numeric(c(RV$Horizon_profile$input$Value[2], RV$Horizon_profile$input$Value[1]))
+
+    Path.s <- data.frame(
+      name="summer_solstice", RV$Horizon_profile$summer_solstice, 
+      destPoint(p=point, b=RV$Horizon_profile$summer_solstice$A_sun, d=100))
+      
+    
+    colnames(Path.s) <- c("name", "A", "H", "lon", "lat")
+    Path.w <- data.frame(
+      name="winter_solstice", RV$Horizon_profile$winter_solstice, 
+      destPoint(p=point, b=RV$Horizon_profile$winter_solstice$A_sun, d=200))
+    colnames(Path.w) <- c("name", "A", "H", "lon", "lat")
+    Path.p <- data.frame(
+      name="horizon_profile", RV$Horizon_profile$horizon_profile, 
+      destPoint(p=point, b=RV$Horizon_profile$horizon_profile$A, d=300))
+    colnames(Path.p) <- c("name", "A", "H", "lon", "lat")
+
+    Path <- rbind(Path.s, Path.w)
+    pal   <- colorNumeric(palette = "Spectral", domain = Path$H)
+    pal.p <- colorNumeric(palette = "Spectral", domain = Path.p$H)
+
+    leaflet() %>% addTiles() %>% 
+      setView(lng=point[1], lat=point[2], zoom = 15) %>%
+      addCircles(data=Path.p, lng=~lon, lat=~lat, 
+                 radius=5, color=~pal.p(H),
+                 label=~paste(name, A, H))  %>% 
+      addLegend(position = "topright", pal=pal.p, values=Path.p$H)
+  }
+})
+```
+
+<b></b> {data-icon="ion-stats-bars"}
+=====================================  
+
+Column {data-width=200}
+-------------------------------------
+### <b>Off grid</b>
+
+Monthly average values of PV system energy output.
+
+Probability of battery charge reaching full or empty state. 
+
+List of 10 values giving a histogram of battery charge state. 
+
+
+```{r, echo=FALSE}
+actionButton("OG", "")
+```
+
+Column {data-width=300}
+-------------------------------------
+### 
+
+```{r, echo=FALSE}
+observeEvent(input$OG, {
+  print("processing Off_Grid")
+  source("C://Users//ylace//OneDrive//Desktop//STUFF//PVGIS//off_grid.R")
+  q <- paste0(
+    url=url,
+    "SHScalc?",
+    "lat=", RV$input$location['lat',1], 
+    "&lon=", RV$input$location['lon',1],
+    "&peakpower=", RV$input$system['peakpower',1],
+    "&angle=", RV$input$system['angle',1],
+    "&aspect=", RV$input$system['aspect',1],
+    "&batterysize=", RV$input$off_grid['batterysize',1],
+    "&consumptionday=", RV$input$off_grid['consumptionday',1],
+    "&cutoff=", RV$input$off_grid['cutoff',1],
+    "&outputformat=", outputformat
+  )
+  RV$Off_grid <- Off_grid(q)
+})
+```
+
+```{r, echo=FALSE}
+renderUI({
+  HTML(RV$Off_grid$meta %>% kbl() %>% kable_styling())
+})
+```
+
+Column {}
+-------------------------------------
+### 
+```{r, echo=FALSE}
+renderPlotly({
+  if ( ! is.null(RV$Off_grid) ) {
+    plot_ly(type='scatter', mode='lines', showlegend=TRUE) %>%
+      add_trace(data=RV$Off_grid$monthly, x=~month, y=~E_d, name="E_d") %>%
+      add_trace(data=RV$Off_grid$monthly, x=~month, y=~E_lost_d, name="E_lost_d") %>%
+      add_trace(data=RV$Off_grid$monthly, x=~month, y=~f_f, name="f_f") %>%
+      add_trace(data=RV$Off_grid$monthly, x=~month, y=~f_e, name="f_e")
+  }
+})
+```
+
+### <b>Histogram</b>
+```{r, echo=FALSE}
+renderPlotly({
+  if ( ! is.null(RV$Off_grid) ) {
+    plot_ly(type='bar') %>%
+      add_trace(data=RV$Off_grid$histogram, x=~f_CS, y=~CS_min, name="CS_min") %>%
+      add_trace(data=RV$Off_grid$histogram, x=~f_CS, y=~CS_max, name="CS_max") %>%
+      layout(yaxis=list(title="value"))
+  }
+})
+```
