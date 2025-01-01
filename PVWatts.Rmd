@@ -1,0 +1,580 @@
+---
+title: "PVWatts"
+author: "Yves"
+date: "`r Sys.Date()`"
+output: 
+  flexdashboard::flex_dashboard:
+    theme: cosmo
+    vertical_layout: fill
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+source("C:\\Users\\ylace\\OneDrive\\Desktop\\Sterling Ranch\\PV Model\\PVWatts_functions.R")
+RV <- reactiveValues()
+```
+
+
+ {data-icon="fa-eye"}
+=====================================  
+
+Column {data-width=200}
+-----------------------------------------------------------------------
+
+### <b>PVWatts Input ... System specifications</b>
+```{r, echo=F}
+  renderUI({
+    df <- system_specifications
+    lat <- as.numeric(df$value[7]) ; lon <- as.numeric(df$value[8])
+    lat <- round(lat,4)  ;  lon <- round(lon,4)   
+    df$value[7] <- lat    ;  df$value[8] <- lon 
+    HTML(df %>% kbl() %>% kable_styling())
+  })
+```
+
+
+```{r, echo=F}
+  observeEvent( input$nsrdb, {
+    RV$ALL <- PVWatts.API()
+})
+```
+
+Column {}
+-----------------------------------------------------------------------
+
+### <b>PVWatts®</b>
+
+NREL's PVWatts® Calculator estimates the energy production of grid-connected photovoltaic (PV) energy systems throughout the world. It allows homeowners, small building owners, installers and manufacturers to easily develop estimates of the performance of potential PV installations. The calculator is available via API https://developer.nrel.gov/docs/solar/pvwatts/
+
+PVWatts V8 uses the 2020 TMY data set from the National Solar Radiation Database (NSRDB). A Typical Meteorological Year (TMY) data set is a collection of hourly weather data for a specific location over a one-year period. TMYs are used in computer simulations for building and solar energy systems.
+
+Irradiance is the instantaneous measurement of solar power over some area (watts per square meter). Irradiance is expressed and separated into different components (direct normal (DNI), and diffuse horizontal (DHI) irradiance). 
+
+A fundamental step in calculating PV performance is determining the irradiance incident on the plane of the array (POA) as a function of time.  This POA irradiance is dependent upon several factors, including sun position, array orientation, irradiance components, ground surface reflectivity (Albedo) and shading. https://pvpmc.sandia.gov/modeling-guide/1-weather-design-inputs/plane-of-array-poa-irradiance/
+
+### <b>NSRDB</b>
+
+https://www.sciencedirect.com/science/article/pii/S136403211830087X
+
+The National Solar Radiation Database (NSRDB) is a high temporal and spatial resolution dataset consisting of the three most widely used measurements of solar radiation — global horizontal (GHI), direct normal (DNI), and diffuse horizontal (DHI) irradiance — as well as other meteorological data. The data covers the United States and regions of the surrounding countries. It is a publicly open dataset that has been created and disseminated during the last 23 years. The data can be freely accessed via https://nsrdb.nrel.gov or through an API  https://developer.nrel.gov/docs/solar/nsrdb/nsrdb_data_query/
+
+Pyranometers (thermoelectric detectors) and pyrheliometers (photoelectric detectors), are the most common ground-based radiometers to measure GHI and DNI, respectively. The high cost of operating quality ground stations has resulted in existing surface radiation networks being sparsely distributed and insufficient to meet the needs of the rapidly growing solar energy industry. Weather satellites provide continuous solar radiation estimates covering a wide spectrum of temporal and spatial scales. Numerous solar irradiance models have been developed using empirical, semi-empirical or physical models. 
+
+
+
+ {data-icon="fa-eye"}
+=====================================  
+
+Row {data-width=450}
+-----------------------------------------------------------------------
+### <b>beam normal irradiance $(W/m^2)$</b>
+Beam normal irradiance, also known as direct normal irradiance (DNI), is the amount of solar radiation that reaches a surface on Earth that is perpendicular to the sun's rays.   
+
+### <b>diffuse irradiance $(W/m^2)$</b>
+Diffuse irradiance (DHI) is the part of global irradiance that reaches the Earth's surface from the sky, but not directly from the sun. It is caused by the scattering and reflection of sunlight by the atmosphere. 
+
+### <b>albedo (unitless)</b>
+The albedo of Earth's surface (atmosphere, ocean, land surfaces) determines how much incoming solar energy, or light, is immediately reflected back to space. If it is all reflected, the albedo is 1. If 30% is reflected, the albedo is 0.3. 
+
+### <b></b>
+```{r, echo=F}
+  actionButton("nsrdb", HTML("API call to PVWatts"))
+```
+
+
+Row {}
+-----------------------------------------------------------------------
+### <b>Hourly beam normal irradiance</b>
+```{r, echo=F}
+renderPlotly({
+  if ( ! is.null(RV$ALL) ) {
+      df <- RV$ALL[[1]]$dn.h
+      df$month <- month(df$date)
+
+      slice <- df %>% group_by(month) %>% slice(which.max(value))
+      slice <- data.frame(slice)
+      spl <- lm(slice$value ~ ns(slice$date, df = 3))
+      slice$z <- predict(spl)
+
+      plot_ly(type='scatter', mode='lines', showlegend=FALSE) %>% 
+        add_trace(data=df, x=~date, y=~value, line=list(width=.5)) %>% 
+        add_trace(data=slice, x=~date, y=~z, name="spline") 
+  }
+})
+```
+
+### <b>Hourly diffuse irradiance</b>
+```{r, echo=F}
+renderPlotly({
+  if ( ! is.null(RV$ALL) ) {
+      df <- RV$ALL[[1]]$df.h
+      df$month <- month(df$date)
+      
+      slice <- df %>% group_by(month) %>% slice(which.max(value))
+      slice <- data.frame(slice)
+      spl <- lm(slice$value ~ ns(slice$date, df = 3))
+      slice$z <- predict(spl)
+
+      plot_ly(type='scatter', mode='lines', showlegend=FALSE) %>% 
+        add_trace(data=df, x=~date, y=~value, line=list(width=.5)) %>% 
+        add_trace(data=slice, x=~date, y=~z, name="spline") 
+  }
+})
+```
+
+
+### <b>Hourly albedo</b>
+```{r, echo=F}
+renderPlotly({
+  if ( ! is.null(RV$ALL) ) {
+    df <- RV$ALL[[1]]$alb.h
+    plot_ly(type='scatter', mode='lines', showlegend=FALSE) %>% 
+      add_trace(data=df, x=~date, y=~value, line=list(width=1)) 
+  }
+})
+```
+
+### <b></b>
+
+DNI, DHI, GHI and albedo estimates are from the NSRDB.
+Global irradiance (GHI) is the sum of diffuse and direct irradiance.
+
+Row {}
+-----------------------------------------------------------------------
+
+### <b>day</b>
+``` {r, echo=FALSE}
+renderPlotly ({
+  if ( ! is.null(RV$ALL) ) {
+    df <- RV$ALL[[1]]$dn.h
+    w <- get_window(df, input$d)
+    plot_ly(type='scatter', mode='lines', showlegend=FALSE) %>%
+      add_trace(data=w, x=~date, y=~value)
+  }
+})
+```
+
+### <b>_</b>
+``` {r, echo=FALSE}
+renderPlotly ({
+  if ( ! is.null(RV$ALL) ) {
+    df <- RV$ALL[[1]]$df.h
+    w <- get_window(df, input$d)
+    plot_ly(type='scatter', mode='lines', showlegend=FALSE) %>%
+      add_trace(data=w, x=~date, y=~value)
+  }
+})
+```
+
+### <b>_</b>
+``` {r, echo=FALSE}
+renderPlotly ({
+  if ( ! is.null(RV$ALL) ) {
+    df <- RV$ALL[[1]]$alb.h
+    w <- get_window(df, input$d)
+    plot_ly(type='scatter', mode='lines', showlegend=FALSE) %>%
+      add_trace(data=w, x=~date, y=~value)
+  }
+})
+```
+
+### <b> </b>
+``` {r, echo=FALSE}
+min <- as.Date("2024-01-01", format = "%Y-%m-%d")
+max <- as.Date("2025-01-01", format = "%Y-%m-%d")
+
+sliderInput("d", HTML("<b>Pick 5 days starting on</b>"), min=min, max=max, value=min)
+```
+
+
+ {data-icon="fa-eye"}
+=====================================  
+
+Row {data-width=400}
+-----------------------------------------------------------------------
+### <b>Plane of Array (POA) Irradiance $(kW/m^2)$</b>
+Given the orientation of the array, and estimates of the beam and diffuse irradiance components, the Plane-of-Array (POA) beam, sky diffuse, and ground-reflected diffuse irradiance components are calculated using the Perez 1990 algorithm. 
+
+https://pvpmc.sandia.gov/modeling-guide/1-weather-design-inputs/plane-of-array-poa-irradiance/
+
+https://pvpmc.sandia.gov/modeling-guide/1-weather-design-inputs/plane-of-array-poa-irradiance/calculating-poa-irradiance/poa-sky-diffuse/perez-sky-diffuse-model/
+
+<br><br>
+Notice the tilt of the array has an impact on the amount of solar irradiance collected by the array.
+
+Tilt angle of 40 degrees gives the best performance throughout the year.If the tilt could be adjusted, then:
+
+- 70 degrees in winter
+
+- 40 degrees in spring and fall
+
+- 10 degrees in the summer
+
+
+Row {}
+-----------------------------------------------------------------------
+### <b>Monthly POA</b>
+
+```{r, echo=F}
+renderPlotly({
+  if ( ! is.null(RV$ALL) ) {
+      p <- plot_ly(type='bar', showlegend=TRUE)
+      for ( i in 1:length(RV$ALL) ) {
+          df <- RV$ALL[[i]]$poa.m
+          name <- names(RV$ALL)[[i]]
+          p <- p %>% add_trace(data=df, x=~month, y=~value, name=name)
+      }
+      p <- p %>% layout(barmode = 'overlay')
+      p
+  }
+})
+```
+
+
+### <b>Hourly POA</b>
+
+```{r, echo=F}
+
+renderPlotly({
+  if ( ! is.null(RV$ALL) ) {
+      p <- plot_ly(type='scatter', mode='lines', showlegend=TRUE)
+      for ( i in 1:length(RV$ALL) ) {
+          df <- RV$ALL[[i]]$poa.h
+          name <- names(RV$ALL)[[i]]
+          p <- p %>% add_trace(data=df, x=~date, y=~value, name=name, 
+                               opacity=i/10, line=list(width=.5))
+      }
+      p
+  }
+})
+
+```
+
+### <b></b>
+``` {r, echo=FALSE}
+renderPlotly ({
+  if ( ! is.null(RV$ALL) ) {
+    p <- plot_ly(type='scatter', mode='lines', showlegend=TRUE) 
+
+    for ( i in 1:length(RV$ALL) ) {
+      name <- names(RV$ALL)[[i]]
+      df <- RV$ALL[[i]]$poa.h
+      w <- get_window(df, input$d1)
+      p <- p %>% add_trace(data=w, x=~date, y=~value, name=name)
+    }    
+    p <- p %>% layout(yaxis=list(range=c(0,1300)))
+    p
+  }
+})
+```
+
+
+Row {}
+-----------------------------------------------------------------------
+### <b>Cumulative</b>
+```{r, echo=F}
+
+renderPlotly({
+  if ( ! is.null(RV$ALL) ) {
+      df <- RV$ALL[[1]]$poa.h
+      colnames(df)[2] <- names(RV$ALL)[[1]]
+      nrow(df)
+      for ( j in 2:length(RV$ALL) ) {
+         df <- cbind(df, RV$ALL[[j]]$poa.h$value)  
+         colnames(df)[j+1] <- names(RV$ALL)[[j]]
+      }
+      totals <- data.frame() 
+      for ( c in 2:ncol(df) ) {
+          x <- cumsum(df[, c])
+          temp <- data.frame(tilt=colnames(df)[c], sum=x[length(x)])
+          totals <- rbind(totals, temp)
+      }
+
+      plot_ly(type='scatter', mode='lines', showlegend=FALSE) %>% 
+        add_trace(data=totals, x=~substring(tilt,6,9), y=~sum) %>%
+        layout(xaxis=list(title="tilt angle"))
+  }
+})
+```
+
+### <b></b>
+
+
+### <b></b>
+``` {r, echo=FALSE}
+min <- as.Date("2024-01-01", format = "%Y-%m-%d")
+max <- as.Date("2025-01-01", format = "%Y-%m-%d")
+
+sliderInput("d1", HTML("<b>Pick 5 days starting on</b>"), min=min, max=max, value=min)
+```
+
+
+ {data-icon="fa-eye"}
+=====================================  
+
+Column {data-width=300}
+-----------------------------------------------------------------------
+### <b>Thermal model</b>
+
+PVWatts implements a thermal model to calculate the operating cell temperature using a first-principles heat transfer energy balance model developed by Fuentes. 
+
+Cell temperature is required to calculate the current and voltage (IV) curve of the module.  Cell temperature is affected by the incident irradiance, weather conditions (such as air temperature and wind speed), and module construction and material properties.
+
+https://pvpmc.sandia.gov/modeling-guide/2-dc-module-iv/cell-temperature/fuentes-cell-temperature/
+
+###
+
+
+Row {}
+-----------------------------------------------------------------------
+### <b> Temperature (C)</b>
+
+```{r, echo=F}
+renderPlotly({
+  if ( ! is.null(RV$ALL) ) {
+    df.amb <- RV$ALL[[1]]$tamb.h
+    df.cel <- RV$ALL[[1]]$tcell.h
+
+    plot_ly(showlegend=TRUE) %>%
+      add_trace(data=df.amb, x=~date, y=~value, name="ambient", opacity=.8,
+                type='scatter', mode='lines', line=list(width=.3, color='red')) %>%
+      add_trace(data=df.cel, x=~date, y=~value, name="cell", opacity=.2,
+                type='scatter', mode='lines', line=list(width=.3, color='blue'))
+  }
+})
+```
+
+###
+
+
+ {data-icon="fa-eye"}
+=====================================  
+
+Column {data-width=300}
+-----------------------------------------------------------------------
+### <b>Array performance</b>
+
+Array performance is defined by DC power output, which is based on 
+
+-   given nameplate DC rating (system capacity)
+
+-   cell temperature 
+
+-   transmitted POA irradiance.
+
+
+The AC output of a photovoltaic (PV) system is the alternating current (AC) electricity produced by a solar inverter after converting the direct current (DC) electricity generated by the PV panels.
+
+An inverter is device that converts DC to AC electricity. The inverter's nameplate rating indicates its capacity to process the power of the PV array. For example, a 7.6 kW inverter can produce an output of up to 7.6 kW AC.
+
+
+Row {}
+-----------------------------------------------------------------------
+### <b>DC monthly (kWh)</b>
+
+```{r, echo=F}
+renderPlotly({
+  if ( ! is.null(RV$ALL) ) {
+      p <- plot_ly(type='scatter', mode='lines', showlegend=TRUE)
+      for ( i in 1:length(RV$ALL) ) {
+          df.dc <- RV$ALL[[i]]$dc.m
+          name <- names(RV$ALL)[[i]]
+          p <- p %>% add_trace(data=df.dc, x=~month, y=~value, name=name)
+      }
+      p <- p %>% layout(xaxis=list(title="monthly"))
+      p
+  }
+})
+```
+
+### <b>DC hourly (kW)</b>
+
+```{r, echo=F}
+renderPlotly({
+  if ( ! is.null(RV$ALL) ) {
+      p <- plot_ly(type='scatter', mode='lines', showlegend=TRUE)
+      for ( i in 1:length(RV$ALL) ) {
+          df.dc <- RV$ALL[[i]]$dc.h
+          name <- names(RV$ALL)[[i]]
+          p <- p %>% add_trace(data=df.dc, x=~date, y=~value, name=name)
+      }
+      p <- p %>% layout(xaxis=list(title="hourly"))
+      p
+  }
+})
+```
+
+### <b></b>
+``` {r, echo=FALSE}
+renderPlotly ({
+  if ( ! is.null(RV$ALL) ) {
+    p <- plot_ly(type='scatter', mode='lines', showlegend=TRUE) 
+
+    for ( i in 1:length(RV$ALL) ) {
+      name <- names(RV$ALL)[[i]]
+      df <- RV$ALL[[i]]$dc.h
+      w <- get_window(df, input$d3)
+      p <- p %>% add_trace(data=w, x=~date, y=~value, name=name)
+    }    
+    p
+  }
+})
+```
+
+Row {}
+-----------------------------------------------------------------------
+### <b>AC monthly (kWhac)</b>
+
+```{r, echo=F}
+renderPlotly({
+  if ( ! is.null(RV$ALL) ) {
+      p <- plot_ly(type='scatter', mode='lines', showlegend=TRUE)
+      for ( i in 1:length(RV$ALL) ) {
+         df.ac <- RV$ALL[[i]]$ac.m
+         name <- names(RV$ALL)[[i]]
+          p <- p %>% add_trace(data=df.ac, x=~month, y=~value, name=name)
+     }
+     p <- p %>% layout(xaxis=list(title="monthly"))
+     p
+  }
+})
+```
+
+### <b>AC hourly(Wac)</b>
+
+```{r, echo=F}
+renderPlotly({
+  if ( ! is.null(RV$ALL) ) {
+      p <- plot_ly(type='scatter', mode='lines', showlegend=TRUE)
+      for ( i in 1:length(RV$ALL) ) {
+          df.ac <- RV$ALL[[i]]$ac.h
+         name <- names(RV$ALL)[[i]]
+         p <- p %>% add_trace(data=df.ac, x=~date, y=~value, name=name)
+     }
+      p <- p %>% layout(xaxis=list(title="hourly"))
+      p
+  }
+})
+```
+
+### <b></b>
+``` {r, echo=FALSE}
+min <- as.Date("2024-01-01", format = "%Y-%m-%d")
+max <- as.Date("2025-01-01", format = "%Y-%m-%d")
+
+sliderInput("d3", HTML("<b>Pick 5 days starting on</b>"), min=min, max=max, value=min)
+```
+
+
+
+ {data-icon="fa-eye"}
+=====================================  
+
+Row {}
+-----------------------------------------------------------------------
+### <b>AC annual (kWh)</b>
+
+```{r, echo=F}
+renderPlotly({
+  if ( ! is.null(RV$ALL) ) {
+      df <- data.frame()
+      for ( i in 1:length(RV$ALL) ) {
+           temp <- data.frame(tilt=substring(names(RV$ALL)[[i]], 6, 9),
+                              value=RV$ALL[[i]]$ac.a
+                             )
+           df <- rbind(df, temp)
+      }
+      plot_ly(type='bar', showlegend=FALSE) %>% 
+        add_trace(data=df, x=~tilt, y=~value)
+  }
+})
+```
+
+### <b>Annual solar radiation ($kWh/m^2/day$)</b>
+```{r, echo=F}
+renderPlotly({
+  if ( ! is.null(RV$ALL) ) {
+      df <- data.frame()
+      for ( i in 1:length(RV$ALL) ) {
+          temp <- data.frame(tilt=substring(names(RV$ALL)[[i]], 6, 9),
+                            value=RV$ALL[[i]]$solrad.a
+                            )
+          df <- rbind(df, temp)
+      }
+  
+      plot_ly(type='bar', showlegend=FALSE) %>% 
+        add_trace(data=df, x=~tilt, y=~value)
+  }
+})
+```
+
+Row {}
+-----------------------------------------------------------------------
+### <b>Capacity factor</b>
+```{r, echo=F}
+renderPlotly({
+  if ( ! is.null(RV$ALL) ) {
+      df <- data.frame()
+      for ( i in 1:length(RV$ALL) ) {
+          temp <- data.frame(tilt=substring(names(RV$ALL)[[i]], 6, 9),
+                            value=RV$ALL[[i]]$capacity_factor
+                            )
+          df <- rbind(df, temp)
+      }
+  
+      plot_ly(type='scatter', mode='lines', showlegend=FALSE) %>% 
+        add_trace(data=df, x=~tilt, y=~value)
+  }
+})
+```
+
+
+### <b>Monthly solar radiation ($kWh/m^2/day$)</b>
+```{r, echo=F}
+renderPlotly({
+  if ( ! is.null(RV$ALL) ) {
+      p <- plot_ly(type='scatter', mode='lines', showlegend=TRUE)
+      for ( i in 1:length(RV$ALL) ) {
+          df <- RV$ALL[[i]]$solrad.m
+          name <- names(RV$ALL)[[i]]
+          p <- p %>% add_trace(data=df, x=~month, y=~value, name=name)
+      }
+      p <- p %>% layout(xaxis=list(title="monthly"))
+      p
+  }
+})
+```
+Row {}
+-----------------------------------------------------------------------
+### <b>Capacity factor</b>
+Capacity factor is the ratio of the system's predicted annual electrical output to the nameplate output, which is equivalent to the quantity of energy the system would generate if it operated at its nameplate capacity for every hour of the year. (AC-to-DC)
+
+### <b>Solar radiation</b>
+The average amount of solar radiation that reaches the top of the Earth's atmosphere each year is around 1,361 watts per square meter $(W/m^2)$. However, the amount of solar radiation that reaches the Earth's surface varies depending on a number of factors.
+
+
+ {data-icon="fa-eye"}
+=====================================  
+
+###
+
+<b>DC system size</b> is the DC (direct current) power rating of the photovoltaic array in kilowatts (kW). The default PV system size is 4 kW.
+
+<b>DC-to-AC size ratio</b> default is 1.1  The default 4 kW system has an array size of 4 DC kW and an inverter size of 3.63 AC kW. 
+
+<b>Array type</b> describes whether the PV modules in the array are fixed, or whether they move to track the movement of the sun across the sky with one or two axes of rotation. 
+
+<b>System losses</b> account for performance losses you would expect in a real system. The default value for the system losses is 14%. System losses are due to dirt, shading, snow, electrical losses, wiring, connections, light-induced degradation, age, and other factors.
+
+<b>Tilt angle</b> is the angle from horizontal of the photovoltaic modules in the array. For a fixed array, the tilt angle is the angle from horizontal of the array where 0° = horizontal, and 90° = vertical. For an array installed on a building's roof, the tilt angle is equal to the roof pitch.
+
+<b>Azimuth</b> is the angle clockwise from true north describing the direction that the array faces. An azimuth angle of 180° is for a south-facing array, and an azimuth angle of zero degrees is for a north-facing array.
+
+<b>Inverter efficiency</b> is the inverter's rated AC power output divided by its rated DC power output. The default value is 96%.
+
+
+
+<b></b>
+<b></b>
+<b></b>
+
