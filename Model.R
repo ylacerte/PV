@@ -11,8 +11,8 @@ library(viridis)
 defaults <- function() {
   
   location <- data.frame(rbind(
-    lat=c(value=39.48083560687681, desc="latitude"),
-    lon=c(value=-105.06391035422446, desc="longitude")
+    lat=c(value=39., desc="latitude"),
+    lon=c(value=-105., desc="longitude")
   ))
   location$value <- as.numeric(location$value)
 
