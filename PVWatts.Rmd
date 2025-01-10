@@ -10,34 +10,16 @@ runtime: shiny
 ---
 
 ```{r setup, include=FALSE}
+library(leaflet)
 source("C:\\Users\\ylace\\OneDrive\\Desktop\\Sterling Ranch\\PV Model\\PVWatts_functions.R")
+
 RV <- reactiveValues()
+RV$system <- init_parms
 ```
 
 
  {data-icon="fa-eye"}
 =====================================  
-
-Column {data-width=200}
------------------------------------------------------------------------
-
-### <b>PVWatts Input ... System specifications</b>
-```{r, echo=F}
-  renderUI({
-    df <- system_specifications
-    lat <- as.numeric(df$value[7]) ; lon <- as.numeric(df$value[8])
-    lat <- round(lat,4)  ;  lon <- round(lon,4)   
-    df$value[7] <- lat    ;  df$value[8] <- lon 
-    HTML(df %>% kbl() %>% kable_styling())
-  })
-```
-
-
-```{r, echo=F}
-  observeEvent( input$nsrdb, {
-    RV$ALL <- PVWatts.API()
-})
-```
 
 Column {}
 -----------------------------------------------------------------------
@@ -65,6 +47,89 @@ Pyranometers (thermoelectric detectors) and pyrheliometers (photoelectric detect
  {data-icon="fa-eye"}
 =====================================  
 
+Column {data-width=300}
+-----------------------------------------------------------------------
+### <b>PVWatts Input ... System specifications</b>
+```{r, echo=F}
+  renderUI({
+    HTML(case(RV$system) %>% kbl(row.names = F) %>% kable_styling())
+  })
+```
+
+Column {data-width=150}
+-----------------------------------------------------------------------
+### <b>Specify your panel orientation</b>
+```{r, echo=F}
+numericInput("tilt", "tilt", value=init_parms$tilt)
+numericInput("azimuth", "azimuth", value=init_parms$azimuth)
+```
+
+###
+```{r, echo=F}
+actionButton("reset", "System Default" )
+HTML("<br><br>")
+actionButton("map", "REFRESH Map" )
+HTML("<br><br>")
+actionButton("api", HTML("API call to PVWatts"))
+```
+
+Column {}
+-----------------------------------------------------------------------
+### <b>Click on the map to new location</b>
+```{r, echo=F}
+output$EC <- renderLeaflet({
+  l <- leaflet() %>% addProviderTiles("CartoDB.Positron") 
+
+  pt <- c(RV$system$lon, RV$system$lat)
+  if ( is.null(pt) ) {
+    l <- l %>% addCircles(lng=init_parms$longitude, lat=init_parms$latitude, color='red')
+  }
+  else {
+    l <- l %>% addCircles(lng=RV$system$longitude, lat=RV$system$latitude, color='red')
+  }
+})
+leafletOutput('EC')
+```
+
+```{r, echo=FALSE}
+  observeEvent(input$EC_click, {
+    RV$system$latitude <- input$EC_click$lat
+    RV$system$longitude <- input$EC_click$lng
+})
+
+  observeEvent(input$tilt, {
+      RV$system$tilt <- input$tilt
+})
+
+  observeEvent(input$azimuth, {
+      RV$system$azimuth <- input$azimuth
+})
+
+  observeEvent(input$reset, {
+      RV$system <- init_parms
+      updateNumericInput(session, "tilt", "tilt", value=init_parms$tilt)
+      updateNumericInput(session, "azimuth", "azimuth", value=init_parms$azimuth)
+})
+
+  observeEvent(input$map, {
+    proxy <- leafletProxy("EC")
+    proxy %>% addTiles() %>% clearShapes() %>%
+     addProviderTiles("CartoDB.Positron") %>% 
+     setView(lng=RV$system$longitude, lat=RV$system$latitude, zoom = 10) %>%
+     addCircles(lng=RV$system$longitude, lat=RV$system$latitude, color='red')
+})
+
+  observeEvent(input$api, {
+    RV$out <- PVWatts.API(case(RV$system))
+})
+
+```
+
+
+
+ {data-icon="fa-eye"}
+=====================================  
+
 Row {data-width=450}
 -----------------------------------------------------------------------
 ### <b>beam normal irradiance $(W/m^2)$</b>
@@ -77,9 +142,8 @@ Diffuse irradiance (DHI) is the part of global irradiance that reaches the Earth
 The albedo of Earth's surface (atmosphere, ocean, land surfaces) determines how much incoming solar energy, or light, is immediately reflected back to space. If it is all reflected, the albedo is 1. If 30% is reflected, the albedo is 0.3. 
 
 ### <b></b>
-```{r, echo=F}
-  actionButton("nsrdb", HTML("API call to PVWatts"))
-```
+DNI, DHI, GHI and albedo estimates are from the NSRDB.
+Global irradiance (GHI) is the sum of diffuse and direct irradiance.
 
 
 Row {}
@@ -87,18 +151,9 @@ Row {}
 ### <b>Hourly beam normal irradiance</b>
 ```{r, echo=F}
 renderPlotly({
-  if ( ! is.null(RV$ALL) ) {
-      df <- RV$ALL[[1]]$dn.h
-      df$month <- month(df$date)
-
-      slice <- df %>% group_by(month) %>% slice(which.max(value))
-      slice <- data.frame(slice)
-      spl <- lm(slice$value ~ ns(slice$date, df = 3))
-      slice$z <- predict(spl)
-
+  if ( ! is.null(RV$out) ) {
       plot_ly(type='scatter', mode='lines', showlegend=FALSE) %>% 
-        add_trace(data=df, x=~date, y=~value, line=list(width=.5)) %>% 
-        add_trace(data=slice, x=~date, y=~z, name="spline") 
+        add_trace(data=RV$out$hourly, x=~hour, y=~dn, line=list(width=.5))  
   }
 })
 ```
@@ -106,18 +161,9 @@ renderPlotly({
 ### <b>Hourly diffuse irradiance</b>
 ```{r, echo=F}
 renderPlotly({
-  if ( ! is.null(RV$ALL) ) {
-      df <- RV$ALL[[1]]$df.h
-      df$month <- month(df$date)
-      
-      slice <- df %>% group_by(month) %>% slice(which.max(value))
-      slice <- data.frame(slice)
-      spl <- lm(slice$value ~ ns(slice$date, df = 3))
-      slice$z <- predict(spl)
-
+  if ( ! is.null(RV$out) ) {
       plot_ly(type='scatter', mode='lines', showlegend=FALSE) %>% 
-        add_trace(data=df, x=~date, y=~value, line=list(width=.5)) %>% 
-        add_trace(data=slice, x=~date, y=~z, name="spline") 
+        add_trace(data=RV$out$hourly, x=~hour, y=~df, line=list(width=.5))  
   }
 })
 ```
@@ -126,65 +172,13 @@ renderPlotly({
 ### <b>Hourly albedo</b>
 ```{r, echo=F}
 renderPlotly({
-  if ( ! is.null(RV$ALL) ) {
-    df <- RV$ALL[[1]]$alb.h
-    plot_ly(type='scatter', mode='lines', showlegend=FALSE) %>% 
-      add_trace(data=df, x=~date, y=~value, line=list(width=1)) 
+  if ( ! is.null(RV$out) ) {
+      plot_ly(type='scatter', mode='lines', showlegend=FALSE) %>% 
+        add_trace(data=RV$out$hourly, x=~hour, y=~alb, line=list(width=.5))  
   }
 })
 ```
 
-### <b></b>
-
-DNI, DHI, GHI and albedo estimates are from the NSRDB.
-Global irradiance (GHI) is the sum of diffuse and direct irradiance.
-
-Row {}
------------------------------------------------------------------------
-
-### <b>day</b>
-``` {r, echo=FALSE}
-renderPlotly ({
-  if ( ! is.null(RV$ALL) ) {
-    df <- RV$ALL[[1]]$dn.h
-    w <- get_window(df, input$d)
-    plot_ly(type='scatter', mode='lines', showlegend=FALSE) %>%
-      add_trace(data=w, x=~date, y=~value)
-  }
-})
-```
-
-### <b>_</b>
-``` {r, echo=FALSE}
-renderPlotly ({
-  if ( ! is.null(RV$ALL) ) {
-    df <- RV$ALL[[1]]$df.h
-    w <- get_window(df, input$d)
-    plot_ly(type='scatter', mode='lines', showlegend=FALSE) %>%
-      add_trace(data=w, x=~date, y=~value)
-  }
-})
-```
-
-### <b>_</b>
-``` {r, echo=FALSE}
-renderPlotly ({
-  if ( ! is.null(RV$ALL) ) {
-    df <- RV$ALL[[1]]$alb.h
-    w <- get_window(df, input$d)
-    plot_ly(type='scatter', mode='lines', showlegend=FALSE) %>%
-      add_trace(data=w, x=~date, y=~value)
-  }
-})
-```
-
-### <b> </b>
-``` {r, echo=FALSE}
-min <- as.Date("2024-01-01", format = "%Y-%m-%d")
-max <- as.Date("2025-01-01", format = "%Y-%m-%d")
-
-sliderInput("d", HTML("<b>Pick 5 days starting on</b>"), min=min, max=max, value=min)
-```
 
 
  {data-icon="fa-eye"}
@@ -213,138 +207,31 @@ Tilt angle of 40 degrees gives the best performance throughout the year.If the t
 
 Row {}
 -----------------------------------------------------------------------
-### <b>Monthly POA</b>
+### <b>Monthly</b>
 
 ```{r, echo=F}
 renderPlotly({
-  if ( ! is.null(RV$ALL) ) {
-      p <- plot_ly(type='bar', showlegend=TRUE)
-      for ( i in 1:length(RV$ALL) ) {
-          df <- RV$ALL[[i]]$poa.m
-          name <- names(RV$ALL)[[i]]
-          p <- p %>% add_trace(data=df, x=~month, y=~value, name=name)
-      }
-      p <- p %>% layout(barmode = 'overlay')
-      p
+  if ( ! is.null(RV$out) ) {
+      plot_ly(type='bar', showlegend=FALSE) %>% 
+        add_trace(data=RV$out$monthly, x=~month.abb[1:12], y=~poa, line=list(width=.5)) %>%
+        layout(xaxis=list(title="month"))
   }
 })
 ```
 
 
-### <b>Hourly POA</b>
+### <b>Hourly</b>
 
 ```{r, echo=F}
 
 renderPlotly({
-  if ( ! is.null(RV$ALL) ) {
-      p <- plot_ly(type='scatter', mode='lines', showlegend=TRUE)
-      for ( i in 1:length(RV$ALL) ) {
-          df <- RV$ALL[[i]]$poa.h
-          name <- names(RV$ALL)[[i]]
-          p <- p %>% add_trace(data=df, x=~date, y=~value, name=name, 
-                               opacity=i/10, line=list(width=.5))
-      }
-      p
-  }
-})
-
-```
-
-### <b></b>
-``` {r, echo=FALSE}
-renderPlotly ({
-  if ( ! is.null(RV$ALL) ) {
-    p <- plot_ly(type='scatter', mode='lines', showlegend=TRUE) 
-
-    for ( i in 1:length(RV$ALL) ) {
-      name <- names(RV$ALL)[[i]]
-      df <- RV$ALL[[i]]$poa.h
-      w <- get_window(df, input$d1)
-      p <- p %>% add_trace(data=w, x=~date, y=~value, name=name)
-    }    
-    p <- p %>% layout(yaxis=list(range=c(0,1300)))
-    p
-  }
-})
-```
-
-
-Row {}
------------------------------------------------------------------------
-### <b>Cumulative</b>
-```{r, echo=F}
-
-renderPlotly({
-  if ( ! is.null(RV$ALL) ) {
-      df <- RV$ALL[[1]]$poa.h
-      colnames(df)[2] <- names(RV$ALL)[[1]]
-      nrow(df)
-      for ( j in 2:length(RV$ALL) ) {
-         df <- cbind(df, RV$ALL[[j]]$poa.h$value)  
-         colnames(df)[j+1] <- names(RV$ALL)[[j]]
-      }
-      totals <- data.frame() 
-      for ( c in 2:ncol(df) ) {
-          x <- cumsum(df[, c])
-          temp <- data.frame(tilt=colnames(df)[c], sum=x[length(x)])
-          totals <- rbind(totals, temp)
-      }
-
+  if ( ! is.null(RV$out) ) {
       plot_ly(type='scatter', mode='lines', showlegend=FALSE) %>% 
-        add_trace(data=totals, x=~substring(tilt,6,9), y=~sum) %>%
-        layout(xaxis=list(title="tilt angle"))
+        add_trace(data=RV$out$hourly, x=~hour, y=~poa, line=list(width=.5))
   }
 })
+
 ```
-
-### <b></b>
-
-
-### <b></b>
-``` {r, echo=FALSE}
-min <- as.Date("2024-01-01", format = "%Y-%m-%d")
-max <- as.Date("2025-01-01", format = "%Y-%m-%d")
-
-sliderInput("d1", HTML("<b>Pick 5 days starting on</b>"), min=min, max=max, value=min)
-```
-
-
- {data-icon="fa-eye"}
-=====================================  
-
-Column {data-width=300}
------------------------------------------------------------------------
-### <b>Thermal model</b>
-
-PVWatts implements a thermal model to calculate the operating cell temperature using a first-principles heat transfer energy balance model developed by Fuentes. 
-
-Cell temperature is required to calculate the current and voltage (IV) curve of the module.  Cell temperature is affected by the incident irradiance, weather conditions (such as air temperature and wind speed), and module construction and material properties.
-
-https://pvpmc.sandia.gov/modeling-guide/2-dc-module-iv/cell-temperature/fuentes-cell-temperature/
-
-###
-
-
-Row {}
------------------------------------------------------------------------
-### <b> Temperature (C)</b>
-
-```{r, echo=F}
-renderPlotly({
-  if ( ! is.null(RV$ALL) ) {
-    df.amb <- RV$ALL[[1]]$tamb.h
-    df.cel <- RV$ALL[[1]]$tcell.h
-
-    plot_ly(showlegend=TRUE) %>%
-      add_trace(data=df.amb, x=~date, y=~value, name="ambient", opacity=.8,
-                type='scatter', mode='lines', line=list(width=.3, color='red')) %>%
-      add_trace(data=df.cel, x=~date, y=~value, name="cell", opacity=.2,
-                type='scatter', mode='lines', line=list(width=.3, color='blue'))
-  }
-})
-```
-
-###
 
 
  {data-icon="fa-eye"}
@@ -367,104 +254,42 @@ The AC output of a photovoltaic (PV) system is the alternating current (AC) elec
 
 An inverter is device that converts DC to AC electricity. The inverter's nameplate rating indicates its capacity to process the power of the PV array. For example, a 7.6 kW inverter can produce an output of up to 7.6 kW AC.
 
+Factors affecting performance:
+
+  - Solar irradiance: The amount of sunlight reaching the panels. 
+  - Panel efficiency: The conversion efficiency of the solar panels themselves. 
+  - Inverter efficiency: The efficiency of the device converting DC power from the panels to AC power. 
+  - System losses: Losses due to wiring, shading, and other factors. 
+  - Temperature: Higher temperatures can reduce panel efficiency. 
+
+
 
 Row {}
 -----------------------------------------------------------------------
-### <b>DC monthly (kWh)</b>
+### <b>monthly (kWh)</b>
 
 ```{r, echo=F}
 renderPlotly({
-  if ( ! is.null(RV$ALL) ) {
-      p <- plot_ly(type='scatter', mode='lines', showlegend=TRUE)
-      for ( i in 1:length(RV$ALL) ) {
-          df.dc <- RV$ALL[[i]]$dc.m
-          name <- names(RV$ALL)[[i]]
-          p <- p %>% add_trace(data=df.dc, x=~month, y=~value, name=name)
-      }
-      p <- p %>% layout(xaxis=list(title="monthly"))
-      p
+  if ( ! is.null(RV$out) ) {
+      plot_ly(type='bar', showlegend=TRUE) %>% 
+        add_trace(data=RV$out$monthly, x=~month.abb[1:12], y=~ac, name="AC", line=list(width=.5)) %>%
+        add_trace(data=RV$out$monthly, x=~month.abb[1:12], y=~dc, name="DC", line=list(width=.5)) %>%
+        layout(xaxis=list(title="month"))
   }
 })
 ```
 
-### <b>DC hourly (kW)</b>
+### <b>hourly (kW)</b>
 
 ```{r, echo=F}
 renderPlotly({
-  if ( ! is.null(RV$ALL) ) {
-      p <- plot_ly(type='scatter', mode='lines', showlegend=TRUE)
-      for ( i in 1:length(RV$ALL) ) {
-          df.dc <- RV$ALL[[i]]$dc.h
-          name <- names(RV$ALL)[[i]]
-          p <- p %>% add_trace(data=df.dc, x=~date, y=~value, name=name)
-      }
-      p <- p %>% layout(xaxis=list(title="hourly"))
-      p
+  if ( ! is.null(RV$out) ) {
+      plot_ly(type='scatter', mode='lines', showlegend=TRUE) %>% 
+        add_trace(data=RV$out$hourly, x=~hour, y=~ac, name="AC", line=list(width=.5)) %>% 
+        add_trace(data=RV$out$hourly, x=~hour, y=~dc, name="DC", line=list(width=.5)) 
   }
 })
 ```
-
-### <b></b>
-``` {r, echo=FALSE}
-renderPlotly ({
-  if ( ! is.null(RV$ALL) ) {
-    p <- plot_ly(type='scatter', mode='lines', showlegend=TRUE) 
-
-    for ( i in 1:length(RV$ALL) ) {
-      name <- names(RV$ALL)[[i]]
-      df <- RV$ALL[[i]]$dc.h
-      w <- get_window(df, input$d3)
-      p <- p %>% add_trace(data=w, x=~date, y=~value, name=name)
-    }    
-    p
-  }
-})
-```
-
-Row {}
------------------------------------------------------------------------
-### <b>AC monthly (kWhac)</b>
-
-```{r, echo=F}
-renderPlotly({
-  if ( ! is.null(RV$ALL) ) {
-      p <- plot_ly(type='scatter', mode='lines', showlegend=TRUE)
-      for ( i in 1:length(RV$ALL) ) {
-         df.ac <- RV$ALL[[i]]$ac.m
-         name <- names(RV$ALL)[[i]]
-          p <- p %>% add_trace(data=df.ac, x=~month, y=~value, name=name)
-     }
-     p <- p %>% layout(xaxis=list(title="monthly"))
-     p
-  }
-})
-```
-
-### <b>AC hourly(Wac)</b>
-
-```{r, echo=F}
-renderPlotly({
-  if ( ! is.null(RV$ALL) ) {
-      p <- plot_ly(type='scatter', mode='lines', showlegend=TRUE)
-      for ( i in 1:length(RV$ALL) ) {
-          df.ac <- RV$ALL[[i]]$ac.h
-         name <- names(RV$ALL)[[i]]
-         p <- p %>% add_trace(data=df.ac, x=~date, y=~value, name=name)
-     }
-      p <- p %>% layout(xaxis=list(title="hourly"))
-      p
-  }
-})
-```
-
-### <b></b>
-``` {r, echo=FALSE}
-min <- as.Date("2024-01-01", format = "%Y-%m-%d")
-max <- as.Date("2025-01-01", format = "%Y-%m-%d")
-
-sliderInput("d3", HTML("<b>Pick 5 days starting on</b>"), min=min, max=max, value=min)
-```
-
 
 
  {data-icon="fa-eye"}
@@ -472,75 +297,28 @@ sliderInput("d3", HTML("<b>Pick 5 days starting on</b>"), min=min, max=max, valu
 
 Row {}
 -----------------------------------------------------------------------
-### <b>AC annual (kWh)</b>
+### <b>Annual (kWh)</b>
 
 ```{r, echo=F}
-renderPlotly({
-  if ( ! is.null(RV$ALL) ) {
-      df <- data.frame()
-      for ( i in 1:length(RV$ALL) ) {
-           temp <- data.frame(tilt=substring(names(RV$ALL)[[i]], 6, 9),
-                              value=RV$ALL[[i]]$ac.a
-                             )
-           df <- rbind(df, temp)
-      }
-      plot_ly(type='bar', showlegend=FALSE) %>% 
-        add_trace(data=df, x=~tilt, y=~value)
+renderUI({
+  if ( ! is.null(RV$out) ) {
+    df <- data.frame(rbind(
+      c(what="AC", value=RV$out$annual$ac, units="kWh"),
+      c(what="solar radiation", value=RV$out$annual$solrad, units="kWh/m^2/da"),
+      c(what="Capacity factor", value=RV$out$capacity_factor, units="")
+    ))
+    HTML(df %>% kbl() %>% kable_styling())
   }
 })
 ```
-
-### <b>Annual solar radiation ($kWh/m^2/day$)</b>
-```{r, echo=F}
-renderPlotly({
-  if ( ! is.null(RV$ALL) ) {
-      df <- data.frame()
-      for ( i in 1:length(RV$ALL) ) {
-          temp <- data.frame(tilt=substring(names(RV$ALL)[[i]], 6, 9),
-                            value=RV$ALL[[i]]$solrad.a
-                            )
-          df <- rbind(df, temp)
-      }
-  
-      plot_ly(type='bar', showlegend=FALSE) %>% 
-        add_trace(data=df, x=~tilt, y=~value)
-  }
-})
-```
-
-Row {}
------------------------------------------------------------------------
-### <b>Capacity factor</b>
-```{r, echo=F}
-renderPlotly({
-  if ( ! is.null(RV$ALL) ) {
-      df <- data.frame()
-      for ( i in 1:length(RV$ALL) ) {
-          temp <- data.frame(tilt=substring(names(RV$ALL)[[i]], 6, 9),
-                            value=RV$ALL[[i]]$capacity_factor
-                            )
-          df <- rbind(df, temp)
-      }
-  
-      plot_ly(type='scatter', mode='lines', showlegend=FALSE) %>% 
-        add_trace(data=df, x=~tilt, y=~value)
-  }
-})
-```
-
 
 ### <b>Monthly solar radiation ($kWh/m^2/day$)</b>
 ```{r, echo=F}
 renderPlotly({
-  if ( ! is.null(RV$ALL) ) {
-      p <- plot_ly(type='scatter', mode='lines', showlegend=TRUE)
-      for ( i in 1:length(RV$ALL) ) {
-          df <- RV$ALL[[i]]$solrad.m
-          name <- names(RV$ALL)[[i]]
-          p <- p %>% add_trace(data=df, x=~month, y=~value, name=name)
-      }
-      p <- p %>% layout(xaxis=list(title="monthly"))
-      p
+  if ( ! is.null(RV$out) ) {
+      plot_ly(type='bar', showlegend=F) %>% 
+        add_trace(data=RV$out$monthly, x=~month.abb[1:12], y=~solrad) %>%
+        layout(xaxis=list(title="month"))
   }
 })
 ```
