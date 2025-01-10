@@ -1,0 +1,413 @@
+---
+title: "Photovoltaic (PV) system"
+author: "Yves"
+format: html
+editor: visual
+
+execute: 
+  warning: false
+  message: false
+---
+
+## Introduction
+
+A Photovoltaic (PV) system is installed on the roof of my new home. I was curious on how the system was sized, and oriented. Here's what I learned.
+
+About 20% of the sunlight hitting a photovoltaic (PV) panel is converted into usable electricity. Solar panels generate direct current (DC) which needs to be converted to AC by an inverter before it can be used in my home and fed back into the grid.
+
+Factors affecting system performance include:
+
+-   Solar irradiance: The amount of sunlight reaching the panels.
+
+-   Panel efficiency: The conversion efficiency of the solar panels themselves.
+
+-   Inverter efficiency: The efficiency of the device converting DC power from the panels to AC power.
+
+-   System losses: Losses due to wiring, shading, and other factors.
+
+-   Temperature: Higher temperatures can reduce panel efficiency.
+
+Modeling a PV system to determine its size (how many panels) and the orientation of the panels (tilt and azimuth) is a complex matter. PVWatts and PVGIS are both free software packages that can be used to estimate the energy production of photovoltaic (PV) systems. PVWatts is designed and maintained by the National Renewable Energy Laboratory (NREL) (<https://pvwatts.nrel.gov/>) while PVGIS is a EU product ( <https://joint-research-centre.ec.europa.eu/photovoltaic-geographical-information-system-pvgis_en>).
+
+## What I will do
+
+Both products have an API. I will make use of PVWatts' API today (<https://developer.nrel.gov/docs/solar/pvwatts/>). Given a system specification, I will explore how to analyze the system to produce optimal panel orientation.
+
+A design surface will be generated, i.e. I will determine AC efficiency as a function of panel orientation. I expect optimal panel orientation changes from month to month, so there will be a design surface for each month.
+
+To get there, I will need to make many API calls to PVWatts. API calls are slow and often they come with an upper limit to the number of API calls per day. I will apply Design of Experiments (DOE) (<https://en.wikipedia.org/wiki/Design_of_experiments>) techniques to optimize the number of API calls. Specifically, a Space Filling Design (SFD), often associated with computer experiments, aims at best cover or spread, i.e. not too many points clustered in one area and no areas lacking data points. I will focus on Latin Hypercube Sampling (<https://en.wikipedia.org/wiki/Latin_hypercube_sampling>).
+
+Complex design surfaces are expected. Ordinary polynomial models will not be adequate for modelling these surfaces. I will not use regression to model a surface, since there are no errors in the computer run. I will use a Gaussian Process Model (GPM) (<https://en.wikipedia.org/wiki/Gaussian_process>) to approximate design surfaces. GPMs are metamodeling techniques in the field of design and analysis of computer experiments, where the models are used as surrogates of expensive-to-run numerical models. I need to strike a balance between the number of calls, and the level of confidence in the GPM. Too few calls will be result in low fidelity design surfaces.
+
+## System Specification
+
+System capacity is what is installed on my roof. Array type is "fixed, roof mounted". Module type is "standard". Losses is the losses due to cabling, soiling, shading, etc DC to AC size ratio indicates the inverter's efficiency in converting DC to AC. Timeframe indicates monthly data will be returned.
+
+```{r}
+#| echo: false
+
+case <- function(tilt, azimuth) {
+  system <- data.frame(rbind(
+    c(what= "system_capacity", value=4, units="kW"),
+    c(what= "module_type", value=0, units=""),
+    c(what= "losses", value=14, units="percent"),
+    c(what= "array_type", value=1, units=""),
+    c(what= "dc_ac_ratio", value=1.2, units=""),
+    c(what= "latitude", value=39.5, units="degrees"),
+    c(what= "longitude", value=-105.1, units="degrees"),
+    c(what= "timeframe", value="monthly", units=""),
+    c(what= "tilt", value=tilt, units="degrees"),
+    c(what= "azimuth", value=azimuth, units="degrees")
+  ))
+  rownames(system) <- system$what
+  return(system)  
+}
+system=case(30,180)  ;  system
+
+```
+
+Tilt and azimuth will be variables in this model. The possible panel orientations are shown below
+
+```{r}
+#| echo: false
+library(dplyr)
+library(kableExtra)
+
+tilt_range <- range(30,80)  
+az_range <- range(150,250)
+df <- data.frame(rbind(tilt_range, az_range ))
+colnames(df) <- c("from", "to")
+df
+
+```
+
+## Functions
+
+The following R functions have been built to ease the analysis.
+
+**PVWatts.API** formulates the query. The response includes monthly AC data that corresponds to the system specification. Note the need for an API key, which can be acquired by reaching out to the PVWatts staff. The R package httr2 performs HTTP Requests and processes the responses. Here's what the query looks like:
+
+```{r}
+#| echo: false
+  url <- "https://developer.nrel.gov/api/pvwatts/v8.json"
+
+  paste0(url,
+    "?api_key=", "MY_KEY",
+    "&system_capacity=", system['system_capacity',2],
+    "&module_type=", system['module_type',2],
+    "&losses=", system['losses',2],
+    "&array_type=", system['array_type',2],
+    "&dc_ac_ratio=", system['dc_ac_ratio',2],
+    "&lat=", system['latitude',2],
+    "&lon=", system['longitude',2],
+    "&timeframe=", system['timeframe',2],
+    "&tilt=", system['tilt',2],
+    "&azimuth=", system['azimuth',2]
+  )
+
+```
+
+```{r}
+#| echo: false
+
+library(httr2)
+
+PVWatts.API <- function(system) {
+# https://developer.nrel.gov/docs/solar/pvwatts/v8/
+  
+  url <- "https://developer.nrel.gov/api/pvwatts/v8.json"
+  MY_KEY <- "mywwV6K2ujsZXYmHlkfVuOIjL5ZKmN7TBMuDNpX3"
+
+    query <- paste0(url,
+                    "?api_key=", MY_KEY,
+                    "&system_capacity=", system['system_capacity',2],
+                    "&module_type=", system['module_type',2],
+                    "&losses=", system['losses',2],
+                    "&array_type=", system['array_type',2],
+                    "&dc_ac_ratio=", system['dc_ac_ratio',2],
+                    "&lat=", system['latitude',2],
+                    "&lon=", system['longitude',2],
+                    "&timeframe=", system['timeframe',2],
+                    "&tilt=", system['tilt',2],
+                    "&azimuth=", system['azimuth',2]
+    )
+    
+  req <- request(query)
+  resp <- req_perform(req)
+#    resp_content_type(resp)    # json
+#    resp_encoding(resp)        # UTF-8
+  contents <- resp |> resp_body_json()
+
+  inputs <- data.frame(value=unlist(contents$inputs))    
+    inputs$name <- rownames(inputs)
+    rownames(inputs) <- NULL
+    
+  version <- contents$version
+  
+  station_info <- data.frame(value=unlist(contents$station_info))    
+    station_info$name <- rownames(station_info)
+    rownames(station_info) <- NULL
+    
+  monthly <- data.frame(
+      poa=unlist(contents$outputs$poa_monthly),
+      ac=unlist(contents$outputs$ac_monthly),
+      dc=unlist(contents$outputs$dc_monthly),
+      solrad=unlist(contents$outputs$solrad_monthly))
+
+  annual <- data.frame(
+      ac=contents$outputs$ac_annual,
+      solrad=contents$outputs$solrad_annual)
+
+# https://atb.nrel.gov/electricity/2023/pv-ac-dc
+  capacity_factor <- data.frame(value=contents$outputs$capacity_factor)
+  
+  if ( is.null (contents$outputs$ac) ) {
+    hourly <- NULL
+  }
+  else {
+    hourly <- data.frame(
+      poa = unlist(contents$outputs$poa),
+      ac = unlist(contents$outputs$ac),
+      dc = unlist(contents$outputs$dc),
+      dn = unlist(contents$outputs$dn),
+      df = unlist(contents$outputs$df),
+      alb = unlist(contents$outputs$alb),
+      tamb = unlist(contents$outputs$tamb),
+      tcell = unlist(contents$outputs$tcell),
+      wspd = unlist(contents$outputs$wspd))
+    
+    time1 <- as.POSIXct("0000-01-01 00", format = "%Y-%m-%d %H")
+    time2 <- as.POSIXct("0000-12-31 00", format = "%Y-%m-%d %H")
+    hourly$hour <- seq(from=time1, to=time2, 
+                       length.out=length(contents$outputs$poa))
+  }
+
+  return (list(inputs = inputs, 
+              annual  = annual,
+              monthly = monthly, 
+              hourly = hourly,
+              capacity_factor = capacity_factor
+              )
+  )    
+}
+
+```
+
+**panelOrientation** generates tilt and azimuth samples based on LatinHypercube design as implemented in the R package lhs.
+
+```{r}
+#| echo: false
+
+library(lhs)
+
+panelOrientation <- function(samples) {
+  # samples is a data frame
+  #   n is number of samples
+  #   r1 is tilt range
+  #   r2 is azimuth range
+  
+  # apply LHS to panel orientation
+
+  s <- samples$n[1]
+  X <- randomLHS(s, 2)
+  
+  # scale X
+  tilt    <- samples$r1[1] + (samples$r1[2] - samples$r1[1] - 1) * X[,1] 
+  azimuth <- samples$r2[1] + (samples$r2[2] - samples$r2[1] - 1) * X[,2] 
+  
+  return(data.frame(tilt, azimuth))  
+}
+
+```
+
+**runPVWatts** calls PVWatts.API as many times as there are samples. The function returns a summary of all tilt and azimuth angles, with the corresponding AC monthly performance.
+
+```{r}
+#| echo: false
+runPVWatts <- function(panels) {
+  # given a data frame of panel orientations,
+  # return the monthly AC performance of each orientation
+  
+  list.ac <- list()
+  for ( i in 1:nrow(panels) ) {
+    list.ac[[i]] <- PVWatts.API(case(tilt = panels$tilt[i], 
+                                     azimuth = panels$azimuth[i]))
+  }
+
+  summary <- data.frame()
+  for ( i in 1:length(list.ac) ) {
+    temp <- data.frame(
+      tilt=list.ac[[i]]$inputs$value[9],
+      azimuth=list.ac[[i]]$inputs$value[10],
+      month=1:12,
+      ac=list.ac[[i]]$monthly$ac
+    )
+    summary <- rbind(summary, temp)
+  }
+  return(summary)
+}
+
+```
+
+**ResponseSurface** looks at AC generation given panel orientation on a monthly basis.
+
+```{r}
+#| echo: false
+
+ResponseSurface <- function(summary, month) {
+  # look at panel orientation on a monthly basis
+
+  extract.m <- summary[which(summary$month==month),]
+  extract.m$tilt <- as.numeric(extract.m$tilt)
+  extract.m$azimuth <- as.numeric(extract.m$azimuth)
+  
+  O <- as.matrix(extract.m[,1:2])
+  AC <- as.numeric(extract.m$ac)
+  data <- data.frame(tilt=O[,1], azimuth=O[,2], AC=AC)
+
+  return(data)
+}
+
+```
+
+## Response Surface
+
+Now that the machinery is in place, let us generate samples and plot the surfaces for two different months.
+
+```{r}
+#| echo: false
+library(plotly)
+
+n <- 50
+print(paste(n, "samples were generated"))
+samples <- data.frame(n=n, r1=tilt_range, r2=az_range) 
+panels <- panelOrientation(samples)
+summary <- runPVWatts(panels)
+
+m1 <- 1 ; m8 <- 8
+print(paste("plot surfaces for the following months:", 
+            month.abb[m1], "and", month.abb[m8]))
+
+data1 <- ResponseSurface(summary, m1)
+data2 <- ResponseSurface(summary, m8)
+
+p <- plot_ly(showlegend=T) %>%
+  add_trace(data=data1, x=~tilt, y=~azimuth, z=~AC, 
+            name="Jan", type='mesh3d') %>%
+  add_trace(data=data1, x=~tilt, y=~azimuth, z=~AC, 
+            name="Jan", type='scatter3d', 
+            mode='markers', marker=list(size=3)) %>%
+  add_trace(data=data2, x=~tilt, y=~azimuth, z=~AC, 
+            name="Aug", type='mesh3d') %>%
+  add_trace(data=data2, x=~tilt, y=~azimuth, z=~AC, 
+            name="Aug", type='scatter3d', 
+            mode='markers', marker=list(size=3))
+p
+
+```
+
+## Gaussian Process Model
+
+A Gaussian Process Model provides estimates of a response (AC in our case) given a panel orientation, (tilt, azimuth) pair. There are many suitable Gaussian Process R packages. A short list includes: growfunctions, RobustGaSP, DiceKriging, GPFDA, kergp, mlegp, GPfit and funGp. I will use the R package GauPro.
+
+Let's generate some orientations I want an AC estimated by our Gaussian Process. The number of (tilt, azimuth) pairs is shown below.
+
+Remember, the quality of the AC estimates is a function of the quality and quantity of the samples used to characterize the surface(s).
+
+```{r}
+tilt <- seq(30,80,1)
+azimuth   <- seq(150,200,1)
+
+```
+
+```{r}
+#| echo: false
+
+q <- as.matrix(expand.grid(tilt, azimuth)) 
+print(paste(length(q[,1]), "(tilt, azimuth) pairs will be estimated by GauPro"))
+```
+
+```{r}
+#| echo: false
+
+library(GauPro)
+
+predict <- data.frame()
+for (i in 1:12) {
+  rs <- ResponseSurface(summary, i)
+  dm <- data.matrix(data.frame(tilt=rs$tilt, azimuth=rs$azimuth))
+  gp <- GauPro(dm, rs$AC) 
+  p <- data.frame(month=month.abb[i], tilt=q[,1], azimuth=q[,2], 
+                  AC=gp$predict(q))
+  predict <- rbind(predict, p)
+}
+
+
+```
+
+#### Fixed panels
+
+Let's us use GPM to answer the following question. My panels are fixed on my roof, but I have the option of selecting a tilt and azimuth. What is the best orientation such that my yearly AC generation is maximized.
+
+```{r}
+#| echo: false
+
+bestAC <- data.frame()
+for ( i in 1:nrow(q) ) {
+  o1 <- predict[which(predict$tilt == tilt[i] & 
+                      predict$azimuth == azimuth[i]),]
+  temp <- data.frame(tilt=tilt[i], azimuth=azimuth[i], sumAC=sum(o1$AC))
+  bestAC <- rbind(bestAC, temp)
+}
+opt.f <- bestAC[which(bestAC$sumAC == max(bestAC$sumAC)),]
+rownames(opt.f) <- NULL ; S.fixed <- opt.f$sumAC
+
+df <- predict[which(predict$tilt == opt.f$tilt & 
+                      predict$azimuth == opt.f$azimuth),]
+rownames(df) <- NULL ; df
+
+plot_ly(type='bar', showlegend=T) %>%
+  add_trace(data=df, x=~month, y=~AC, name="AC") %>%
+  add_trace(data=df, x=~month, y=~tilt, name="tilt") %>%
+  add_trace(data=df, x=~month, y=~azimuth, name="azimuth")
+
+```
+
+#### Movable panels: two axis
+
+My panels are movable on two axis. What are the best monthly orientations such that my AC generation is maximized.
+
+```{r}
+#| echo: false
+
+opt <- data.frame()
+for (i in 1:12) {
+  temp <- predict[which(month.abb[i] == predict$month),]
+  temp2 <- temp[temp$AC == max(temp$AC),]
+  opt <- rbind(opt, temp2)
+}
+opt$name <- "two axes"
+plot_ly(type='bar', showlegend=T) %>%
+  add_trace(data=opt, x=~month, y=~AC, name="AC") %>%
+  add_trace(data=opt, x=~month, y=~tilt, name="tilt") %>%
+  add_trace(data=opt, x=~month, y=~azimuth, name="azimuth")
+
+rownames(opt) <- NULL   ;   opt
+
+S.both <- sum(opt$AC)
+
+```
+
+You will notice that a movable panel will be more efficient.
+
+```{r}
+#| echo: false
+df <- data.frame(fixed.AC=S.fixed, movable.AC=S.both)
+df
+```
+
+## Final words
+
+I have shown how one can run a few, albeit slow or expensive computer experiments and still arrive at some meaningful answers. I used a web hosted PV system analysis tool with an API to demonstrate the approach. I learned a lot about how PV systems engineering is done.
+
+This post was written with R Quarto, an open-source scientific and technical publishing system. The code is available at <https://github.com/ylacerte/PV> under the name blog.qmd
